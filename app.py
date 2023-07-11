@@ -1,7 +1,20 @@
+import pandas as pd
+import json
+import os
 from flask import Flask, render_template, request
 import csv
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 * 1024  # Limit file upload size to 1GB
+
+def transform_dataframe_to_json(dataframe):
+    data = []
+    for _, row in dataframe.iterrows():
+        prompt = row['prompt text']
+        completion = row['ideal generated text']
+        entry = {"prompt": prompt, "completion": completion}
+        data.append(entry)
+    return data
 
 @app.route("/")
 def hello_world():
@@ -9,20 +22,36 @@ def hello_world():
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    file = request.files['file']
-    if file:
-        filename = file.filename
-        file.save(filename)
-        # Process the CSV file
-        with open(filename, 'r') as csv_file:
-            csv_data = csv.reader(csv_file)
-            for row in csv_data:
-                # Process each row of the CSV file
-                print(row)
-        return 'CSV file uploaded and processed successfully.'
-    else:
+    if 'file' not in request.files:
         return 'No file uploaded.'
+
+    file = request.files['file']
+    if file.filename == '':
+        return 'No file selected.'
+
+    # Check file size
+    file_size = os.stat(file.filename).st_size
+    if file_size > app.config['MAX_CONTENT_LENGTH']:
+        return 'File size exceeds the limit of 1GB.'
+
+    filename = file.filename
+    file.save(filename)
+    
+    # Process the CSV file
+    df = pd.read_csv(filename)
+    trainingset = transform_dataframe_to_json(df)
+    
+    # Save JSON as 'trainingset' object
+    app.trainingset = trainingset
+    
+    return 'CSV file uploaded and processed successfully.'
+
+@app.route('/save_apikey', methods=['POST'])
+def save_apikey():
+    apikey = request.json.get('apikey')
+    return '204'
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True)
+
 
